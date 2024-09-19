@@ -11,16 +11,23 @@ os.system('cls' if os.name == 'nt' else 'clear')
 config = configparser.ConfigParser()
 config.read('config.conf')
 
-# Prompt for Discord Client ID if not provided in config
-DISCORD_CLIENT_ID = config['Discord'].get('ClientID')
-if not DISCORD_CLIENT_ID:
-    DISCORD_CLIENT_ID = input("Enter your Discord Client ID: ")
+# Ensure the required configuration is present
+try:
+    DISCORD_CLIENT_ID = config['Discord']['ClientID']
+    if not DISCORD_CLIENT_ID:
+        raise ValueError("Discord Client ID is missing in config.conf")
 
-# Other configurations from conf file
-JELLYFIN_SERVER_URL = config['Jellyfin']['ServerURL']
-JELLYFIN_API_TOKEN = config['Jellyfin']['ApiToken']
-TARGET_USER = config['Jellyfin']['TargetUser']
-DEFAULT_IMAGE = config['Discord']['DefaultImage']  # Customizable default image key
+    JELLYFIN_SERVER_URL = config['Jellyfin']['ServerURL']
+    JELLYFIN_API_TOKEN = config['Jellyfin']['ApiToken']
+    TARGET_USER = config['Jellyfin']['TargetUser']
+    DEFAULT_IMAGE = config['Discord']['DefaultImage']  # Customizable default image key
+
+except KeyError as e:
+    print(f"Missing configuration key: {e}")
+    raise
+except ValueError as e:
+    print(e)
+    raise
 
 # Initialize Discord Rich Presence
 rpc = Presence(DISCORD_CLIENT_ID)
@@ -49,13 +56,13 @@ def update_presence():
 
     while True:
         sessions = fetch_sessions()
-        kaz_session = next((session for session in sessions if session['UserName'] == TARGET_USER), None)
+        target_session = next((session for session in sessions if session['UserName'] == TARGET_USER), None)
 
-        if kaz_session:
-            now_playing = kaz_session.get('NowPlayingItem')
-            play_state = kaz_session.get('PlayState', {})
+        if target_session:
+            now_playing = target_session.get('NowPlayingItem')
+            play_state = target_session.get('PlayState', {})
 
-            if now_playing and not play_state.get('IsPaused', False):  # Ensure the song is not paused
+            if now_playing and not play_state.get('IsPaused', False):  # Ensure the item is not paused
                 title = now_playing.get('Name', 'Unknown Title')
                 artist = now_playing.get('Artists', [None])[0] if now_playing.get('Artists') else 'Unknown Artist'
                 album = now_playing.get('Album', 'Unknown Album')
@@ -71,26 +78,26 @@ def update_presence():
                 state = truncate_string(state, 128)
                 large_text = truncate_string(f"{title} on {album}", 128)
 
-                # Only update the print and Rich Presence if the song or state has changed
+                # Only update the print and Rich Presence if the item or state has changed
                 if details != previous_details or state != previous_state:
                     print(f"{title} by {artist} on {album}")
                     previous_details = details
                     previous_state = state
 
-                rpc.update(
-                    details=details,            # The main details message
-                    state=state,               # The state message (album name)
-                    large_image=cover_image,   # Image key for the cover image
-                    large_text=large_text      # Tooltip text for the image
-                )
-            elif play_state.get('IsPaused', False):  # Check if the song is paused
+                    rpc.update(
+                        details=details,            # The main details message
+                        state=state,               # The state message (album name)
+                        large_image=cover_image,   # Image key for the cover image
+                        large_text=large_text      # Tooltip text for the image
+                    )
+            elif play_state.get('IsPaused', False):  # Check if the item is paused
                 if previous_details is not None:  # Only clear once
-                    print(f"{TARGET_USER} has paused the song.")
+                    print(f"{TARGET_USER} has paused the item.")
                     previous_details = None
                     previous_state = None
                 rpc.clear()
             else:
-                if previous_details is not None:  # Only clear once when there's no active song
+                if previous_details is not None:  # Only clear once when there's no active item
                     print(f"{TARGET_USER} is not listening to anything.")
                     previous_details = None
                     previous_state = None
